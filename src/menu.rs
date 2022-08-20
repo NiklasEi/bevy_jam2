@@ -30,6 +30,9 @@ impl Default for ButtonColors {
     }
 }
 
+#[derive(Component)]
+pub struct MainCamera;
+
 fn setup_menu(
     mut commands: Commands,
     font_assets: Res<FontAssets>,

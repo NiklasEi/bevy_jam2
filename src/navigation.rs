@@ -37,9 +37,9 @@ impl EnemyWayPoints {
 fn walk_marker(picking_source: Query<&PickingCamera, Without<Map>>, map: Query<Entity, With<Map>>) {
     if let Some((entity, intersection)) = picking_source.single().intersect_top() {
         if entity == map.single() {
-            info!("hit map at {:?}", intersection.position());
+            // info!("hit map at {:?}", intersection.position());
         }
     } else {
-        info!("None")
+        // info!("None")
     }
 }
