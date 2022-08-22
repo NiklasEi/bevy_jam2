@@ -1,4 +1,5 @@
 use crate::GameState;
+use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy_asset_loader::prelude::*;
 use bevy_kira_audio::AudioSource;
@@ -15,6 +16,8 @@ impl Plugin for LoadingPlugin {
                 .with_collection::<FontAssets>()
                 .with_collection::<AudioAssets>()
                 .with_collection::<TextureAssets>()
+                .with_collection::<MazeAssets>()
+                .init_resource::<MazeMesh>()
                 .continue_to_state(GameState::Menu),
         );
     }
@@ -42,6 +45,37 @@ pub struct TextureAssets {
     pub green: ColorStandardMaterial<80, 125, 80, { u8::MAX }>,
     pub red: ColorStandardMaterial<{ u8::MAX }, 0, 0, { u8::MAX }>,
     pub blue: ColorStandardMaterial<0, 0, { u8::MAX }, { u8::MAX }>,
+}
+
+#[derive(AssetCollection)]
+pub struct MazeAssets {
+    #[asset(path = "plane.gltf#Scene0")]
+    pub scene: Handle<Scene>,
+    #[asset(path = "mazes/1.png")]
+    pub one: Handle<Image>,
+    #[asset(path = "mazes/2.png")]
+    pub two: Handle<Image>,
+}
+
+pub struct MazeMesh {
+    pub mesh: Handle<Mesh>,
+}
+
+impl FromWorld for MazeMesh {
+    fn from_world(world: &mut World) -> Self {
+        let scene_handle = world.resource::<MazeAssets>().scene.clone();
+        let mut scene = world
+            .resource_mut::<Assets<Scene>>()
+            .remove(scene_handle)
+            .unwrap();
+        let mut system_state: SystemState<(Query<&Handle<Mesh>>,)> =
+            SystemState::new(&mut scene.world);
+        let mesh_handle_query = system_state.get(&mut scene.world);
+
+        MazeMesh {
+            mesh: mesh_handle_query.0.single().clone(),
+        }
+    }
 }
 
 pub struct ColorStandardMaterial<const R: u8, const G: u8, const B: u8, const A: u8> {
