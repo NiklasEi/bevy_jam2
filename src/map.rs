@@ -1,10 +1,11 @@
-use crate::loading::{MazeAssets, MazeMesh, TextureAssets};
+use crate::loading::{MazeAssets, TextureAssets};
 use crate::GameState;
 use bevy::prelude::*;
 use bevy::reflect::TypeUuid;
-use bevy::render::mesh::VertexAttributeValues;
+use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_resource::{AsBindGroup, ShaderRef};
 use bevy_mod_picking::{Highlighting, PickableBundle};
+use itertools::Itertools;
 
 pub struct MapPlugin;
 
@@ -35,41 +36,22 @@ fn spawn_map(
     mut commands: Commands,
     textures: Res<TextureAssets>,
     mut materials: ResMut<Assets<MazeMaterial>>,
-    maze: Res<MazeMesh>,
     maze_assets: Res<MazeAssets>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let maze_texture = images.remove(&maze_assets.two).unwrap();
-    const MAZE_PIXEL_PER_ROW: usize = 5;
-    let maze_mash = meshes.get_mut(&maze.mesh).unwrap();
-    let mut len = 0;
-    if let Some(VertexAttributeValues::Float32x3(positions)) =
-        maze_mash.attribute_mut(Mesh::ATTRIBUTE_POSITION)
-    {
-        len = positions.len();
-        positions.iter_mut().for_each(|[x, y, z]| {
-            println!("x {}, z {}, y{}", x, z, y);
-            let x = (*x + 1.) / 2.;
-            let z = (*z + 1.) / 2.;
-
-            let x_index = ((MAZE_PIXEL_PER_ROW - 1) as f32 * x) as u32 as usize;
-            let z_index = ((MAZE_PIXEL_PER_ROW - 1) as f32 * z) as u32 as usize;
-
-            let pixel = z_index * MAZE_PIXEL_PER_ROW + x_index;
-
-            println!("x {}, z {}, y{} , pixel {}", x_index, z_index, y, pixel);
-            if maze_texture.data.get(pixel * 4).unwrap() > &50 {
-                if *y > -0.5 {
-                    *y = *y - 1.;
-                }
-            }
-        });
-    }
-    maze_mash.insert_attribute(Mesh::ATTRIBUTE_COLOR, [[0.3, 0.5, 0.3, 1.0]].repeat(len));
     commands
         .spawn_bundle(MaterialMeshBundle {
-            mesh: maze.mesh.clone(),
+            mesh: meshes.add(
+                MazePlane {
+                    extent: 2.5,
+                    num_vertices: 200,
+                    maze_pixel_per_row: 19,
+                    maze_handle: &maze_assets.one,
+                    image_assets: &mut images,
+                }
+                .into(),
+            ),
             material: materials.add(MazeMaterial { time: 0. }),
             transform: Transform::from_scale(Vec3::splat(2.5)),
             ..default()
@@ -92,4 +74,109 @@ fn spawn_map(
         transform: Transform::from_xyz(4.0, 8.0, 4.0),
         ..default()
     });
+}
+
+#[derive(Debug, Copy, Clone)]
+struct MazePlane<'a> {
+    extent: f32,
+    num_vertices: u32,
+    maze_pixel_per_row: usize,
+    maze_handle: &'a Handle<Image>,
+    image_assets: &'a Assets<Image>,
+}
+
+impl<'a> From<MazePlane<'a>> for Mesh {
+    fn from(plane: MazePlane) -> Self {
+        let diff = plane.extent / plane.num_vertices as f32;
+
+        let vertices = (0..=plane.num_vertices)
+            .cartesian_product(0..=plane.num_vertices)
+            .map(|(y, x)| {
+                (
+                    [
+                        x as f32 * diff - 0.5 * plane.extent,
+                        0.0,
+                        y as f32 * diff - 0.5 * plane.extent,
+                    ],
+                    [0.0, 1.0, 0.0],
+                    [
+                        x as f32 / plane.num_vertices as f32,
+                        y as f32 / plane.num_vertices as f32,
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let indices = Indices::U32(
+            (0..=plane.num_vertices)
+                .cartesian_product(0..=plane.num_vertices)
+                .enumerate()
+                .filter_map(|(index, (x, y))| {
+                    if y >= plane.num_vertices {
+                        None
+                    } else if x >= plane.num_vertices {
+                        None
+                    } else {
+                        Some([
+                            [
+                                index as u32,
+                                index as u32 + 1 + 1 + plane.num_vertices,
+                                index as u32 + 1,
+                            ],
+                            [
+                                index as u32,
+                                index as u32 + 1 + plane.num_vertices,
+                                index as u32 + plane.num_vertices + 1 + 1,
+                            ],
+                        ])
+                    }
+                })
+                .flatten()
+                .flatten()
+                .collect::<Vec<_>>(),
+        );
+
+        let mut positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
+        let colors = plane.carve_maze(&mut positions);
+        let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
+        let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.set_indices(Some(indices));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        mesh
+    }
+}
+
+impl<'a> MazePlane<'a> {
+    fn carve_maze(&self, positions: &mut Vec<[f32; 3]>) -> Vec<[f32; 4]> {
+        let maze_texture = self.image_assets.get(self.maze_handle).unwrap();
+        let mut colors: Vec<[f32; 4]> = [[0.3, 0.5, 0.3, 1.0]].repeat(positions.len());
+        positions
+            .iter_mut()
+            .enumerate()
+            .for_each(|(index, [x, y, z])| {
+                let x = (*x + self.extent / 2.) / self.extent;
+                let z = (*z + self.extent / 2.) / self.extent;
+
+                let x_index = (self.maze_pixel_per_row as f32 * x).floor() as u32 as usize;
+                let z_index = (self.maze_pixel_per_row as f32 * z).floor() as u32 as usize;
+
+                // colors.remove(index);
+                // colors.insert(index, [x_index as f32 / self.maze_pixel_per_row as f32, z_index as f32 / self.maze_pixel_per_row as f32, 0.0, 1.0]);
+
+                let pixel = z_index * self.maze_pixel_per_row + x_index;
+
+                if let Some(data) = maze_texture.data.get(pixel * 4) {
+                    if data > &50 && *y > -0.5 {
+                        *y = *y - 1.;
+                    }
+                }
+            });
+
+        colors
+    }
 }

@@ -17,5 +17,5 @@ fn start_audio(audio_assets: Res<AudioAssets>, audio: Res<Audio>) {
     audio
         .play(audio_assets.flying.clone())
         .looped()
-        .with_volume(0.3);
+        .with_volume(0.0);
 }
