@@ -1,3 +1,4 @@
+mod actions;
 mod audio;
 mod character;
 mod enemy;
@@ -11,6 +12,7 @@ use crate::audio::InternalAudioPlugin;
 use crate::loading::LoadingPlugin;
 use crate::menu::MenuPlugin;
 
+use crate::actions::ActionPlugin;
 use crate::character::CharacterPlugin;
 use crate::enemy::EnemyPlugin;
 use crate::map::MapPlugin;
@@ -44,7 +46,8 @@ impl Plugin for GamePlugin {
             .add_plugin(NavigationPlugin)
             .add_plugin(SpawnPlugin)
             .add_plugin(EnemyPlugin)
-            .add_plugin(CharacterPlugin);
+            .add_plugin(CharacterPlugin)
+            .add_plugin(ActionPlugin);
 
         #[cfg(debug_assertions)]
         {

@@ -70,7 +70,11 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position.x, vertex.position.y, vertex.position.z, 1.0));
     out.clip_position = mesh_position_world_to_clip(out.world_position);
 
-//out.color = vec4<f32>(vertex.position.y + 1.0, vertex.position.y + 1.0, vertex.position.y + 1.0, 1.0);
+if (vertex.position.y < -0.5) {
+out.color = vec4<f32>(vertex.position.y + 1.0, vertex.position.y + 1.0, vertex.position.y + 1.0, 1.0);
+} else {
+out.color = vec4<f32>(0.18, 0.55, 0.34, 1.0);
+}
 
 
 

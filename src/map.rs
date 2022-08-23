@@ -11,8 +11,12 @@ pub struct MapPlugin;
 
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(MaterialPlugin::<MazeMaterial>::default())
-            .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(spawn_map));
+        app.insert_resource(AmbientLight {
+            color: Color::BLUE,
+            brightness: 150.,
+        })
+        .add_plugin(MaterialPlugin::<MazeMaterial>::default())
+        .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(spawn_map));
     }
 }
 
@@ -154,11 +158,11 @@ impl<'a> From<MazePlane<'a>> for Mesh {
 impl<'a> MazePlane<'a> {
     fn carve_maze(&self, positions: &mut Vec<[f32; 3]>) -> Vec<[f32; 4]> {
         let maze_texture = self.image_assets.get(self.maze_handle).unwrap();
-        let mut colors: Vec<[f32; 4]> = [[0.3, 0.5, 0.3, 1.0]].repeat(positions.len());
+        let colors: Vec<[f32; 4]> = [[0.3, 0.5, 0.3, 1.0]].repeat(positions.len());
         positions
             .iter_mut()
             .enumerate()
-            .for_each(|(index, [x, y, z])| {
+            .for_each(|(_index, [x, y, z])| {
                 let x = (*x + self.extent / 2.) / self.extent;
                 let z = (*z + self.extent / 2.) / self.extent;
 
