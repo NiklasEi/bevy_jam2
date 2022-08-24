@@ -25,10 +25,16 @@ impl Plugin for MapPlugin {
 pub struct MazeMaterial {
     #[uniform(0)]
     time: f32,
+    #[texture(1)]
+    #[sampler(2)]
+    pub base_color_texture: Option<Handle<Image>>,
 }
 
 impl Material for MazeMaterial {
     fn vertex_shader() -> ShaderRef {
+        "mazes/maze_shader.wgsl".into()
+    }
+    fn fragment_shader() -> ShaderRef {
         "mazes/maze_shader.wgsl".into()
     }
 }
@@ -48,7 +54,7 @@ fn spawn_map(
         .spawn_bundle(MaterialMeshBundle {
             mesh: meshes.add(
                 MazePlane {
-                    extent: 2.5,
+                    extent: 5.,
                     num_vertices: 200,
                     maze_pixel_per_row: 19,
                     maze_handle: &maze_assets.one,
@@ -56,7 +62,10 @@ fn spawn_map(
                 }
                 .into(),
             ),
-            material: materials.add(MazeMaterial { time: 0. }),
+            material: materials.add(MazeMaterial {
+                time: 0.,
+                base_color_texture: Some(textures.grass.clone()),
+            }),
             transform: Transform::from_scale(Vec3::splat(2.5)),
             ..default()
         })
@@ -96,6 +105,9 @@ impl<'a> From<MazePlane<'a>> for Mesh {
         let vertices = (0..=plane.num_vertices)
             .cartesian_product(0..=plane.num_vertices)
             .map(|(y, x)| {
+                // println!("{}/{}", x, y);
+                let uv_x = x as f32 / (plane.num_vertices / 2) as f32;
+                let uv_y = y as f32 / (plane.num_vertices / 2) as f32;
                 (
                     [
                         x as f32 * diff - 0.5 * plane.extent,
@@ -104,8 +116,8 @@ impl<'a> From<MazePlane<'a>> for Mesh {
                     ],
                     [0.0, 1.0, 0.0],
                     [
-                        x as f32 / plane.num_vertices as f32,
-                        y as f32 / plane.num_vertices as f32,
+                        if uv_x > 1. { 2. - uv_x } else { uv_x },
+                        if uv_y > 1. { 2. - uv_y } else { uv_y },
                     ],
                 )
             })
@@ -141,9 +153,9 @@ impl<'a> From<MazePlane<'a>> for Mesh {
         );
 
         let mut positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
-        let colors = plane.carve_maze(&mut positions);
+        let mut uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+        let colors = plane.carve_maze(&mut positions, &mut uvs);
         let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
-        let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
 
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
         mesh.set_indices(Some(indices));
@@ -156,7 +168,7 @@ impl<'a> From<MazePlane<'a>> for Mesh {
 }
 
 impl<'a> MazePlane<'a> {
-    fn carve_maze(&self, positions: &mut Vec<[f32; 3]>) -> Vec<[f32; 4]> {
+    fn carve_maze(&self, positions: &mut Vec<[f32; 3]>, _uvs: &mut Vec<[f32; 2]>) -> Vec<[f32; 4]> {
         let maze_texture = self.image_assets.get(self.maze_handle).unwrap();
         let colors: Vec<[f32; 4]> = [[0.3, 0.5, 0.3, 1.0]].repeat(positions.len());
         positions
@@ -175,8 +187,8 @@ impl<'a> MazePlane<'a> {
                 let pixel = z_index * self.maze_pixel_per_row + x_index;
 
                 if let Some(data) = maze_texture.data.get(pixel * 4) {
-                    if data > &50 && *y > -0.5 {
-                        *y = *y - 1.;
+                    if data > &50 && *y > -0.1 {
+                        *y = *y - 0.3;
                     }
                 }
             });

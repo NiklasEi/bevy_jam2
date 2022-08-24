@@ -23,6 +23,7 @@ use bevy::app::App;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::pbr::wireframe::WireframePlugin;
 use bevy::prelude::*;
+use bevy_atmosphere::prelude::*;
 use bevy_inspector_egui::WorldInspectorPlugin;
 use bevy_mod_picking::DefaultPickingPlugins;
 
@@ -39,6 +40,7 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.add_state(GameState::Loading)
             .add_plugins(DefaultPickingPlugins)
+            .add_plugin(AtmospherePlugin)
             .add_plugin(LoadingPlugin)
             .add_plugin(MenuPlugin)
             .add_plugin(InternalAudioPlugin)

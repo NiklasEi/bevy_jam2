@@ -38,8 +38,8 @@ pub struct AudioAssets {
 
 #[derive(AssetCollection)]
 pub struct TextureAssets {
-    #[asset(path = "textures/bevy.png")]
-    pub texture_bevy: Handle<Image>,
+    #[asset(path = "textures/grass.jpg")]
+    pub grass: Handle<Image>,
     pub green: ColorStandardMaterial<80, 125, 80, { u8::MAX }>,
     pub red: ColorStandardMaterial<{ u8::MAX }, 0, 0, { u8::MAX }>,
     pub blue: ColorStandardMaterial<0, 0, { u8::MAX }, { u8::MAX }>,

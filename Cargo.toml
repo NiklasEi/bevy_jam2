@@ -34,6 +34,7 @@ bevy = { version = "0.8", default-features = false, features = [  "animation",
     "render",
     "png",
     "hdr",
+    "jpeg",
     "x11",
     "filesystem_watcher",] }
 bevy_kira_audio = { version = "0.12" }
@@ -43,6 +44,9 @@ bevy_mod_picking = "0.8.2"
 rand = { version = "0.8.3" }
 itertools = { version = "0.10.3" }
 leafwing-input-manager = "0.5.2"
+bevy_atmosphere = "0.4.0"
+bevy_flycam = { path = "../bevy_flycam" }
+#bevy_flycam = { git = "https://github.com/NiklasEi/bevy_flycam" }
 
 # keep the following in sync with Bevy's dependencies
 winit = { version = "0.26.0", default-features = false }

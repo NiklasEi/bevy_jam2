@@ -71,12 +71,22 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.clip_position = mesh_position_world_to_clip(out.world_position);
 
 if (vertex.position.y < -0.5) {
-out.color = vec4<f32>(vertex.position.y + 1.0, vertex.position.y + 1.0, vertex.position.y + 1.0, 1.0);
+out.color = vec4<f32>(128./255., 96./255., 67./255., 1.0);
 } else {
-out.color = vec4<f32>(0.18, 0.55, 0.34, 1.0);
+out.color = vec4<f32>(31./255., 100./255., 32./255., 1.0);
 }
 
 
 
     return out;
+}
+
+struct FragmentInput {
+    @builtin(front_facing) is_front: bool,
+    #import bevy_pbr::mesh_vertex_output
+};
+
+@fragment
+fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
+        return textureSample(base_color_texture, base_color_sampler, in.uv);
 }
