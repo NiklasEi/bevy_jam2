@@ -1,10 +1,10 @@
-use crate::character::PLAYER_Y;
+use crate::character::{FlyCam, PLAYER_Y};
 use crate::loading::FontAssets;
+use crate::map::PIXEL_WORLD_SIZE;
 use crate::GameState;
 use bevy::prelude::*;
 use bevy_atmosphere::plugin::AtmosphereCamera;
 use bevy_atmosphere::prelude::AtmosphereSettings;
-use bevy_flycam::FlyCam;
 use bevy_mod_picking::PickingCameraBundle;
 
 pub struct MenuPlugin;
@@ -21,9 +21,9 @@ impl Plugin for MenuPlugin {
     }
 }
 
-struct ButtonColors {
-    normal: UiColor,
-    hovered: UiColor,
+pub struct ButtonColors {
+    pub normal: UiColor,
+    pub hovered: UiColor,
 }
 
 impl Default for ButtonColors {
@@ -45,7 +45,11 @@ fn setup_menu(
 ) {
     commands
         .spawn_bundle(Camera3dBundle {
-            transform: Transform::from_translation(Vec3::new(0.0, PLAYER_Y, 1.0)),
+            transform: Transform::from_translation(Vec3::new(
+                -PIXEL_WORLD_SIZE / 2.,
+                PLAYER_Y,
+                0.0,
+            )),
             ..default()
         })
         .insert_bundle(PickingCameraBundle::default())

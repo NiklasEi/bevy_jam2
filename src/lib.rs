@@ -1,12 +1,11 @@
 mod actions;
 mod audio;
 mod character;
-mod enemy;
+mod in_game_menu;
 mod loading;
 mod map;
 mod menu;
-mod navigation;
-mod spawn;
+mod ui;
 
 use crate::audio::InternalAudioPlugin;
 use crate::loading::LoadingPlugin;
@@ -14,10 +13,9 @@ use crate::menu::MenuPlugin;
 
 use crate::actions::ActionPlugin;
 use crate::character::CharacterPlugin;
-use crate::enemy::EnemyPlugin;
+use crate::in_game_menu::InGameMenuPlugin;
 use crate::map::MapPlugin;
-use crate::navigation::NavigationPlugin;
-use crate::spawn::SpawnPlugin;
+use crate::ui::UiPlugin;
 use bevy::app::App;
 #[cfg(debug_assertions)]
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
@@ -32,6 +30,7 @@ enum GameState {
     Loading,
     Playing,
     Menu,
+    InGameMenu,
 }
 
 pub struct GamePlugin;
@@ -45,10 +44,9 @@ impl Plugin for GamePlugin {
             .add_plugin(MenuPlugin)
             .add_plugin(InternalAudioPlugin)
             .add_plugin(MapPlugin)
-            .add_plugin(NavigationPlugin)
-            .add_plugin(SpawnPlugin)
-            .add_plugin(EnemyPlugin)
+            .add_plugin(InGameMenuPlugin)
             .add_plugin(CharacterPlugin)
+            .add_plugin(UiPlugin)
             .add_plugin(ActionPlugin);
 
         #[cfg(debug_assertions)]

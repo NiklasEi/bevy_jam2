@@ -38,15 +38,15 @@ bevy = { version = "0.8", default-features = false, features = [  "animation",
     "x11",
     "filesystem_watcher",] }
 bevy_kira_audio = { version = "0.12" }
-bevy_asset_loader = { version = "0.12" }
+bevy_asset_loader = { version = "0.12", features = ["3d"] }
 bevy-inspector-egui = "0.12.1"
 bevy_mod_picking = "0.8.2"
-rand = { version = "0.8.3" }
-itertools = { version = "0.10.3" }
+bevy_common_assets = {version = "0.3.0", features = ["ron"] }
 leafwing-input-manager = "0.5.2"
 bevy_atmosphere = "0.4.0"
-bevy_flycam = { path = "../bevy_flycam" }
-#bevy_flycam = { git = "https://github.com/NiklasEi/bevy_flycam" }
+
+rand = { version = "0.8.3" }
+serde = { version = "1" }
 
 # keep the following in sync with Bevy's dependencies
 winit = { version = "0.26.0", default-features = false }

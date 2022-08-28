@@ -1,82 +1,277 @@
-use crate::loading::{MazeAssets, TextureAssets};
+use crate::loading::{LabyrinthLevel, LabyrinthMaterials, MazeAssets, TextureAssets};
+use crate::shape::Plane;
 use crate::GameState;
 use bevy::prelude::*;
-use bevy::reflect::TypeUuid;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_resource::{AsBindGroup, ShaderRef};
-use bevy_mod_picking::{Highlighting, PickableBundle};
-use itertools::Itertools;
+
+pub const PIXEL_WORLD_SIZE: f32 = 0.7;
+pub const WALL_HEIGHT: f32 = 0.3;
 
 pub struct MapPlugin;
 
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(AmbientLight {
-            color: Color::BLUE,
-            brightness: 150.,
+            color: Color::WHITE,
+            brightness: 0.1,
         })
-        .add_plugin(MaterialPlugin::<MazeMaterial>::default())
         .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(spawn_map));
     }
 }
 
-#[derive(AsBindGroup, TypeUuid, Debug, Clone)]
-#[uuid = "641bb9cf-2a23-46f8-aa66-91dd79655018"]
-pub struct MazeMaterial {
-    #[uniform(0)]
-    time: f32,
-    #[texture(1)]
-    #[sampler(2)]
-    pub base_color_texture: Option<Handle<Image>>,
-}
-
-impl Material for MazeMaterial {
-    fn vertex_shader() -> ShaderRef {
-        "mazes/maze_shader.wgsl".into()
-    }
-    fn fragment_shader() -> ShaderRef {
-        "mazes/maze_shader.wgsl".into()
-    }
-}
-
-#[derive(Component)]
-pub struct Map;
-
 fn spawn_map(
     mut commands: Commands,
     textures: Res<TextureAssets>,
-    mut materials: ResMut<Assets<MazeMaterial>>,
+    labyrinth_materials: Res<LabyrinthMaterials>,
     maze_assets: Res<MazeAssets>,
-    mut images: ResMut<Assets<Image>>,
+    maze_levels: Res<Assets<LabyrinthLevel>>,
+    images: Res<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    commands
-        .spawn_bundle(MaterialMeshBundle {
-            mesh: meshes.add(
-                MazePlane {
-                    extent: 5.,
-                    num_vertices: 200,
-                    maze_pixel_per_row: 19,
-                    maze_handle: &maze_assets.one,
-                    image_assets: &mut images,
+    let plane = meshes.add(Plane::default().into());
+    let maze_image = images.get(&maze_assets.one_data).unwrap();
+    let pixel_per_row = maze_image.texture_descriptor.size.width as usize;
+    let world_width = pixel_per_row as f32 * PIXEL_WORLD_SIZE;
+    let data = &maze_image.data;
+    let maze_level = maze_levels.get(&maze_assets.one_level).unwrap();
+    for pixel_x in 0..pixel_per_row {
+        for pixel_y in 0..pixel_per_row {
+            let pixel = pixel_y * pixel_per_row + pixel_x;
+            if data.get(pixel * 4).unwrap() > &50 {
+                let mut transform = Transform::from_translation(Vec3::new(
+                    pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                    -WALL_HEIGHT,
+                    pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                ));
+                transform = transform.with_scale(Vec3::splat(PIXEL_WORLD_SIZE));
+                commands.spawn_bundle(PbrBundle {
+                    mesh: plane.clone(),
+                    material: labyrinth_materials.ground.clone(),
+                    transform,
+                    ..default()
+                });
+                // +x
+                if pixel_x < pixel_per_row - 1 && data.get((pixel + 1) * 4).unwrap() < &50 {
+                    let mut transform = Transform::from_translation(Vec3::new(
+                        pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.
+                            + PIXEL_WORLD_SIZE / 2.,
+                        -WALL_HEIGHT / 2.,
+                        pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                    ));
+                    transform = transform.with_scale(Vec3::new(PIXEL_WORLD_SIZE, 1.0, WALL_HEIGHT));
+                    transform = transform.looking_at(transform.translation - Vec3::Y, -Vec3::X);
+                    if maze_level.exit[0] == pixel_x + 1 && maze_level.exit[1] == pixel_y {
+                        transform.translation.y = -3. * (WALL_HEIGHT / 4.);
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                    }
+                    commands.spawn_bundle(PbrBundle {
+                        mesh: plane.clone(),
+                        material: labyrinth_materials.wall.clone(),
+                        transform,
+                        ..default()
+                    });
                 }
-                .into(),
-            ),
-            material: materials.add(MazeMaterial {
-                time: 0.,
-                base_color_texture: Some(textures.grass.clone()),
-            }),
-            transform: Transform::from_scale(Vec3::splat(2.5)),
-            ..default()
-        })
-        .insert(Map)
-        .insert_bundle(PickableBundle::default())
-        .insert(Highlighting {
-            initial: textures.green.handle.clone(),
-            hovered: None,
-            pressed: None,
-            selected: None,
-        });
+                // -x
+                if pixel_x > 0 && data.get((pixel - 1) * 4).unwrap() < &50 {
+                    let mut transform = Transform::from_translation(Vec3::new(
+                        pixel_x as f32 * PIXEL_WORLD_SIZE
+                            - world_width / 2.
+                            - PIXEL_WORLD_SIZE / 2.,
+                        -WALL_HEIGHT / 2.,
+                        pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                    ));
+                    transform = transform.with_scale(Vec3::new(PIXEL_WORLD_SIZE, 1.0, WALL_HEIGHT));
+                    transform = transform.looking_at(transform.translation + Vec3::Y, Vec3::X);
+                    if maze_level.exit[0] == pixel_x - 1 && maze_level.exit[1] == pixel_y {
+                        transform.translation.y = -3. * (WALL_HEIGHT / 4.);
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                    }
+                    commands.spawn_bundle(PbrBundle {
+                        mesh: plane.clone(),
+                        material: labyrinth_materials.wall.clone(),
+                        transform,
+                        ..default()
+                    });
+                }
+                // +y
+                if pixel_y < pixel_per_row - 1
+                    && data.get((pixel + pixel_per_row) * 4).unwrap() < &50
+                {
+                    let mut transform = Transform::from_translation(Vec3::new(
+                        pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                        -WALL_HEIGHT / 2.,
+                        pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.
+                            + PIXEL_WORLD_SIZE / 2.,
+                    ));
+                    transform = transform.with_scale(Vec3::new(PIXEL_WORLD_SIZE, 1.0, WALL_HEIGHT));
+                    transform = transform.looking_at(transform.translation - Vec3::Y, -Vec3::Z);
+                    if maze_level.exit[0] == pixel_x && maze_level.exit[1] == pixel_y + 1 {
+                        transform.translation.y = -3. * (WALL_HEIGHT / 4.);
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                    }
+                    commands.spawn_bundle(PbrBundle {
+                        mesh: plane.clone(),
+                        material: labyrinth_materials.wall.clone(),
+                        transform,
+                        ..default()
+                    });
+                }
+                // -y
+                if pixel_y > 0 && data.get((pixel - pixel_per_row) * 4).unwrap() < &50 {
+                    let mut transform = Transform::from_translation(Vec3::new(
+                        pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                        -WALL_HEIGHT / 2.,
+                        pixel_y as f32 * PIXEL_WORLD_SIZE
+                            - world_width / 2.
+                            - PIXEL_WORLD_SIZE / 2.,
+                    ));
+                    transform = transform.with_scale(Vec3::new(PIXEL_WORLD_SIZE, 1.0, WALL_HEIGHT));
+                    transform = transform.looking_at(transform.translation + Vec3::Y, Vec3::Z);
+                    if maze_level.exit[0] == pixel_x && maze_level.exit[1] == pixel_y - 1 {
+                        transform.translation.y = -3. * (WALL_HEIGHT / 4.);
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                    }
+                    commands.spawn_bundle(PbrBundle {
+                        mesh: plane.clone(),
+                        material: labyrinth_materials.wall.clone(),
+                        transform,
+                        ..default()
+                    });
+                }
+            } else {
+                if maze_level.exit[0] == pixel_x && maze_level.exit[1] == pixel_y {
+                    let mut transform = Transform::from_translation(Vec3::new(
+                        pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                        -WALL_HEIGHT / 2.,
+                        pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                    ));
+                    transform = transform.with_scale(Vec3::splat(PIXEL_WORLD_SIZE));
+                    commands.spawn_bundle(PbrBundle {
+                        mesh: plane.clone(),
+                        material: textures.grass.clone().into(),
+                        transform,
+                        ..default()
+                    });
+                    // +x
+                    if pixel_x < pixel_per_row - 1 && data.get((pixel + 1) * 4).unwrap() < &50 {
+                        let mut transform = Transform::from_translation(Vec3::new(
+                            pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.
+                                + PIXEL_WORLD_SIZE / 2.,
+                            -WALL_HEIGHT / 4.,
+                            pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                        ));
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                        transform = transform.looking_at(transform.translation - Vec3::Y, -Vec3::X);
+                        commands.spawn_bundle(PbrBundle {
+                            mesh: plane.clone(),
+                            material: labyrinth_materials.wall.clone(),
+                            transform,
+                            ..default()
+                        });
+                    }
+                    // -x
+                    if pixel_x > 0 && data.get((pixel - 1) * 4).unwrap() < &50 {
+                        let mut transform = Transform::from_translation(Vec3::new(
+                            pixel_x as f32 * PIXEL_WORLD_SIZE
+                                - world_width / 2.
+                                - PIXEL_WORLD_SIZE / 2.,
+                            -WALL_HEIGHT / 4.,
+                            pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                        ));
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                        transform = transform.looking_at(transform.translation + Vec3::Y, Vec3::X);
+                        commands.spawn_bundle(PbrBundle {
+                            mesh: plane.clone(),
+                            material: labyrinth_materials.wall.clone(),
+                            transform,
+                            ..default()
+                        });
+                    }
+                    // +y
+                    if pixel_y < pixel_per_row - 1
+                        && data.get((pixel + pixel_per_row) * 4).unwrap() < &50
+                    {
+                        let mut transform = Transform::from_translation(Vec3::new(
+                            pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                            -WALL_HEIGHT / 4.,
+                            pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.
+                                + PIXEL_WORLD_SIZE / 2.,
+                        ));
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                        transform = transform.looking_at(transform.translation - Vec3::Y, -Vec3::Z);
+                        commands.spawn_bundle(PbrBundle {
+                            mesh: plane.clone(),
+                            material: labyrinth_materials.wall.clone(),
+                            transform,
+                            ..default()
+                        });
+                    }
+                    // -y
+                    if pixel_y > 0 && data.get((pixel - pixel_per_row) * 4).unwrap() < &50 {
+                        let mut transform = Transform::from_translation(Vec3::new(
+                            pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                            -WALL_HEIGHT / 4.,
+                            pixel_y as f32 * PIXEL_WORLD_SIZE
+                                - world_width / 2.
+                                - PIXEL_WORLD_SIZE / 2.,
+                        ));
+                        transform = transform.with_scale(Vec3::new(
+                            PIXEL_WORLD_SIZE,
+                            1.0,
+                            WALL_HEIGHT / 2.,
+                        ));
+                        transform = transform.looking_at(transform.translation + Vec3::Y, Vec3::Z);
+                        commands.spawn_bundle(PbrBundle {
+                            mesh: plane.clone(),
+                            material: labyrinth_materials.wall.clone(),
+                            transform,
+                            ..default()
+                        });
+                    }
+                } else {
+                    let mut transform = Transform::from_translation(Vec3::new(
+                        pixel_x as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                        0.0,
+                        pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
+                    ));
+                    transform = transform.with_scale(Vec3::splat(PIXEL_WORLD_SIZE));
+                    commands.spawn_bundle(PbrBundle {
+                        mesh: plane.clone(),
+                        material: textures.grass.clone().into(),
+                        transform,
+                        ..default()
+                    });
+                }
+            }
+        }
+    }
 
     commands.spawn_bundle(PointLightBundle {
         point_light: PointLight {
@@ -84,115 +279,115 @@ fn spawn_map(
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        transform: Transform::from_xyz(0.0, 5.0, 0.0),
         ..default()
     });
 }
 
-#[derive(Debug, Copy, Clone)]
-struct MazePlane<'a> {
-    extent: f32,
-    num_vertices: u32,
-    maze_pixel_per_row: usize,
-    maze_handle: &'a Handle<Image>,
-    image_assets: &'a Assets<Image>,
-}
-
-impl<'a> From<MazePlane<'a>> for Mesh {
-    fn from(plane: MazePlane) -> Self {
-        let diff = plane.extent / plane.num_vertices as f32;
-
-        let vertices = (0..=plane.num_vertices)
-            .cartesian_product(0..=plane.num_vertices)
-            .map(|(y, x)| {
-                // println!("{}/{}", x, y);
-                let uv_x = x as f32 / (plane.num_vertices / 2) as f32;
-                let uv_y = y as f32 / (plane.num_vertices / 2) as f32;
-                (
-                    [
-                        x as f32 * diff - 0.5 * plane.extent,
-                        0.0,
-                        y as f32 * diff - 0.5 * plane.extent,
-                    ],
-                    [0.0, 1.0, 0.0],
-                    [
-                        if uv_x > 1. { 2. - uv_x } else { uv_x },
-                        if uv_y > 1. { 2. - uv_y } else { uv_y },
-                    ],
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let indices = Indices::U32(
-            (0..=plane.num_vertices)
-                .cartesian_product(0..=plane.num_vertices)
-                .enumerate()
-                .filter_map(|(index, (x, y))| {
-                    if y >= plane.num_vertices {
-                        None
-                    } else if x >= plane.num_vertices {
-                        None
-                    } else {
-                        Some([
-                            [
-                                index as u32,
-                                index as u32 + 1 + 1 + plane.num_vertices,
-                                index as u32 + 1,
-                            ],
-                            [
-                                index as u32,
-                                index as u32 + 1 + plane.num_vertices,
-                                index as u32 + plane.num_vertices + 1 + 1,
-                            ],
-                        ])
-                    }
-                })
-                .flatten()
-                .flatten()
-                .collect::<Vec<_>>(),
-        );
-
-        let mut positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
-        let mut uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
-        let colors = plane.carve_maze(&mut positions, &mut uvs);
-        let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
-
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-        mesh.set_indices(Some(indices));
-        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-        mesh
-    }
-}
-
-impl<'a> MazePlane<'a> {
-    fn carve_maze(&self, positions: &mut Vec<[f32; 3]>, _uvs: &mut Vec<[f32; 2]>) -> Vec<[f32; 4]> {
-        let maze_texture = self.image_assets.get(self.maze_handle).unwrap();
-        let colors: Vec<[f32; 4]> = [[0.3, 0.5, 0.3, 1.0]].repeat(positions.len());
-        positions
-            .iter_mut()
-            .enumerate()
-            .for_each(|(_index, [x, y, z])| {
-                let x = (*x + self.extent / 2.) / self.extent;
-                let z = (*z + self.extent / 2.) / self.extent;
-
-                let x_index = (self.maze_pixel_per_row as f32 * x).floor() as u32 as usize;
-                let z_index = (self.maze_pixel_per_row as f32 * z).floor() as u32 as usize;
-
-                // colors.remove(index);
-                // colors.insert(index, [x_index as f32 / self.maze_pixel_per_row as f32, z_index as f32 / self.maze_pixel_per_row as f32, 0.0, 1.0]);
-
-                let pixel = z_index * self.maze_pixel_per_row + x_index;
-
-                if let Some(data) = maze_texture.data.get(pixel * 4) {
-                    if data > &50 && *y > -0.1 {
-                        *y = *y - 0.3;
-                    }
-                }
-            });
-
-        colors
-    }
-}
+// #[derive(Debug, Copy, Clone)]
+// struct MazePlane<'a> {
+//     extent: f32,
+//     num_vertices: u32,
+//     maze_pixel_per_row: usize,
+//     maze_handle: &'a Handle<Image>,
+//     image_assets: &'a Assets<Image>,
+// }
+//
+// impl<'a> From<MazePlane<'a>> for Mesh {
+//     fn from(plane: MazePlane) -> Self {
+//         let diff = plane.extent / plane.num_vertices as f32;
+//
+//         let vertices = (0..=plane.num_vertices)
+//             .cartesian_product(0..=plane.num_vertices)
+//             .map(|(y, x)| {
+//                 // println!("{}/{}", x, y);
+//                 let uv_x = x as f32 / (plane.num_vertices / 2) as f32;
+//                 let uv_y = y as f32 / (plane.num_vertices / 2) as f32;
+//                 (
+//                     [
+//                         x as f32 * diff - 0.5 * plane.extent,
+//                         0.0,
+//                         y as f32 * diff - 0.5 * plane.extent,
+//                     ],
+//                     [0.0, 1.0, 0.0],
+//                     [
+//                         if uv_x > 1. { 2. - uv_x } else { uv_x },
+//                         if uv_y > 1. { 2. - uv_y } else { uv_y },
+//                     ],
+//                 )
+//             })
+//             .collect::<Vec<_>>();
+//
+//         let indices = Indices::U32(
+//             (0..=plane.num_vertices)
+//                 .cartesian_product(0..=plane.num_vertices)
+//                 .enumerate()
+//                 .filter_map(|(index, (x, y))| {
+//                     if y >= plane.num_vertices {
+//                         None
+//                     } else if x >= plane.num_vertices {
+//                         None
+//                     } else {
+//                         Some([
+//                             [
+//                                 index as u32,
+//                                 index as u32 + 1 + 1 + plane.num_vertices,
+//                                 index as u32 + 1,
+//                             ],
+//                             [
+//                                 index as u32,
+//                                 index as u32 + 1 + plane.num_vertices,
+//                                 index as u32 + plane.num_vertices + 1 + 1,
+//                             ],
+//                         ])
+//                     }
+//                 })
+//                 .flatten()
+//                 .flatten()
+//                 .collect::<Vec<_>>(),
+//         );
+//
+//         let mut positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
+//         let mut uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
+//         let colors = plane.carve_maze(&mut positions, &mut uvs);
+//         let normals: Vec<_> = vertices.iter().map(|(_, n, _)| *n).collect();
+//
+//         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+//         mesh.set_indices(Some(indices));
+//         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
+//         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+//         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+//         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+//         mesh
+//     }
+// }
+//
+// impl<'a> MazePlane<'a> {
+//     fn carve_maze(&self, positions: &mut Vec<[f32; 3]>, _uvs: &mut Vec<[f32; 2]>) -> Vec<[f32; 4]> {
+//         let maze_texture = self.image_assets.get(self.maze_handle).unwrap();
+//         let colors: Vec<[f32; 4]> = [[0.3, 0.5, 0.3, 1.0]].repeat(positions.len());
+//         positions
+//             .iter_mut()
+//             .enumerate()
+//             .for_each(|(_index, [x, y, z])| {
+//                 let x = (*x + self.extent / 2.) / self.extent;
+//                 let z = (*z + self.extent / 2.) / self.extent;
+//
+//                 let x_index = (self.maze_pixel_per_row as f32 * x).floor() as u32 as usize;
+//                 let z_index = (self.maze_pixel_per_row as f32 * z).floor() as u32 as usize;
+//
+//                 // colors.remove(index);
+//                 // colors.insert(index, [x_index as f32 / self.maze_pixel_per_row as f32, z_index as f32 / self.maze_pixel_per_row as f32, 0.0, 1.0]);
+//
+//                 let pixel = z_index * self.maze_pixel_per_row + x_index;
+//
+//                 if let Some(data) = maze_texture.data.get(pixel * 4) {
+//                     if data > &50 && *y > -0.1 {
+//                         *y = *y - 0.3;
+//                     }
+//                 }
+//             });
+//
+//         colors
+//     }
+// }

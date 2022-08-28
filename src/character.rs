@@ -1,62 +1,83 @@
 use crate::actions::Action;
-use crate::loading::TextureAssets;
+use crate::loading::{LabyrinthLevel, MazeAssets, TextureAssets};
+use crate::map::{PIXEL_WORLD_SIZE, WALL_HEIGHT};
 use crate::GameState;
+use bevy::ecs::event::ManualEventReader;
+use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
-use bevy_mod_picking::{PickableBundle, PickingEvent, SelectionEvent};
+use bevy_mod_picking::PickableBundle;
 use leafwing_input_manager::prelude::*;
-use std::f32::consts::PI;
 
-use bevy_flycam::NoCameraPlayerPlugin;
-use bevy_flycam::{player_look, player_move, FlyCamInputState, MovementSettings};
-
-pub const PLAYER_Y: f32 = -0.55;
+pub const PLAYER_Y: f32 = -WALL_HEIGHT + PLAYER_RADIUS;
+pub const PLAYER_RADIUS: f32 = 0.125;
 
 pub struct CharacterPlugin;
 
 impl Plugin for CharacterPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(NoCameraPlayerPlugin)
-            .insert_resource(MovementSettings {
-                sensitivity: 0.00015, // default: 0.00012
-                speed: 1.0,           // default: 12.0
-            })
-            .add_system_set(
-                SystemSet::on_enter(GameState::Playing)
-                    .with_system(spawn_characters)
-                    .with_system(initial_grab_cursor),
-            )
-            .add_system_set(
-                SystemSet::on_update(GameState::Playing)
-                    .with_system(player_look.before(go_into_character_control))
-                    .with_system(player_move.before(go_into_character_control))
-                    .with_system(go_into_character_control)
-                    .with_system(follow_camera.after(go_into_character_control)),
-            );
+        app.insert_resource(MovementSettings {
+            sensitivity: 0.00017, // default: 0.00012
+            speed: 1.5,           // default: 12.0
+        })
+        .init_resource::<CamInputState>()
+        .add_event::<LeaveLabyrinthEvent>()
+        .add_system_set(
+            SystemSet::on_enter(GameState::Playing)
+                .with_system(spawn_characters)
+                .with_system(initial_grab_cursor),
+        )
+        .add_system_set(SystemSet::on_resume(GameState::Playing).with_system(initial_grab_cursor))
+        .add_system_set(
+            SystemSet::on_update(GameState::Playing)
+                .with_system(player_look.before(follow_camera))
+                .with_system(player_move.before(follow_camera))
+                .with_system(leave_labyrinth.after(player_move))
+                .with_system(attempt_combine)
+                .with_system(follow_camera)
+                .with_system(switch_character_control.after(follow_camera)),
+        );
     }
 }
 
 #[derive(Component)]
-pub struct Character;
+pub struct Character {
+    numbers: Vec<u8>,
+}
 
 fn spawn_characters(
     mut commands: Commands,
     textures: Res<TextureAssets>,
+    maze_assets: Res<MazeAssets>,
+    maze_levels: Res<Assets<LabyrinthLevel>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    commands
-        .spawn_bundle(PbrBundle {
-            mesh: meshes.add(Mesh::from(shape::Capsule {
-                radius: 0.125,
-                depth: 0.25,
-                ..default()
-            })),
-            material: textures.blue.handle.clone(),
-            transform: Transform::from_translation(Vec3::new(0.0, PLAYER_Y, 1.0)),
+    let player_mesh = meshes.add(Mesh::from(shape::Icosphere {
+        radius: PLAYER_RADIUS,
+        subdivisions: 5,
+    }));
+    let maze_level = maze_levels.get(&maze_assets.one_level).unwrap();
+    for (index, starting_position) in maze_level.spawns.iter().enumerate() {
+        let character_number = (index as u8) + 1;
+        let mut character = commands.spawn_bundle(PbrBundle {
+            mesh: player_mesh.clone(),
+            material: textures.get_character_texture(character_number),
+            transform: Transform::from_translation(Vec3::new(
+                starting_position[0] * PIXEL_WORLD_SIZE,
+                PLAYER_Y,
+                starting_position[1] * PIXEL_WORLD_SIZE,
+            )),
             ..default()
-        })
-        .insert(Character)
-        .insert(Controlled)
-        .insert_bundle(PickableBundle::default());
+        });
+        character
+            .insert(Character {
+                numbers: vec![character_number],
+            })
+            .insert(CamInputState::default())
+            .insert_bundle(PickableBundle::default());
+        if character_number == 1 {
+            character.insert(Controlled);
+        }
+    }
 }
 
 fn initial_grab_cursor(mut windows: ResMut<Windows>) {
@@ -71,105 +92,342 @@ fn initial_grab_cursor(mut windows: ResMut<Windows>) {
 #[derive(Component)]
 pub struct Controlled;
 
-fn go_into_character_control(
+fn switch_character_control(
     mut commands: Commands,
-    mut selection: EventReader<PickingEvent>,
-    mut windows: ResMut<Windows>,
-    mut fly_cam_input_state: ResMut<FlyCamInputState>,
-    characters: Query<(Entity, &Transform), (With<Character>, Without<Camera>)>,
+    input: Res<Input<KeyCode>>,
+    mut fly_cam_input_state: ResMut<CamInputState>,
+    mut controlled_character: Query<(Entity, &mut CamInputState), With<Controlled>>,
+    characters: Query<
+        (Entity, &Transform, &Character, &CamInputState),
+        (Without<Camera>, Without<Controlled>),
+    >,
     mut camera: Query<&mut Transform, With<Camera>>,
 ) {
-    for event in selection.iter() {
-        match event {
-            PickingEvent::Selection(event) => match event {
-                SelectionEvent::JustSelected(selected) => {
-                    if let Ok((entity, transform)) = characters.get(*selected) {
-                        if let Some(window) = windows.get_primary_mut() {
-                            window.set_cursor_lock_mode(true);
-                            window.set_cursor_visibility(false);
-                        }
-                        fly_cam_input_state.pitch = 0.;
-                        fly_cam_input_state.yaw = PI / 2.;
-                        let mut camera_transform = camera.single_mut();
-                        camera_transform.translation = transform.translation;
-                        commands.entity(entity).insert(Controlled).insert_bundle(
-                            InputManagerBundle::<Action> {
-                                action_state: ActionState::default(),
-                                input_map: InputMap::new([
-                                    (KeyCode::A, Action::TurnLeft),
-                                    (KeyCode::D, Action::TurnRight),
-                                    (KeyCode::W, Action::Walk),
-                                ]),
-                            },
-                        );
-                    }
-                }
-                SelectionEvent::JustDeselected(_) => {}
-            },
-            _ => {}
+    let pressed = if input.just_pressed(KeyCode::Numpad1) || input.just_pressed(KeyCode::Key1) {
+        1u8
+    } else if input.just_pressed(KeyCode::Numpad2) || input.just_pressed(KeyCode::Key2) {
+        2u8
+    } else if input.just_pressed(KeyCode::Numpad3) || input.just_pressed(KeyCode::Key3) {
+        3u8
+    } else {
+        0u8
+    };
+    if pressed > 0 {
+        if let Some((entity, transform, _, cam_character_state)) = characters
+            .iter()
+            .find(|(_, _, character, _)| character.numbers.contains(&pressed))
+        {
+            let (controlled_entity, mut cam_state) = controlled_character.single_mut();
+            cam_state.yaw = fly_cam_input_state.yaw;
+            cam_state.pitch = fly_cam_input_state.pitch;
+            commands
+                .entity(controlled_entity)
+                .remove_bundle::<InputManagerBundle<Action>>()
+                .remove::<Controlled>();
+            fly_cam_input_state.pitch = cam_character_state.pitch;
+            fly_cam_input_state.yaw = cam_character_state.yaw;
+            let mut camera_transform = camera.single_mut();
+            camera_transform.translation = transform.translation;
+            camera_transform.rotation = Quat::from_axis_angle(Vec3::Y, cam_character_state.yaw)
+                * Quat::from_axis_angle(Vec3::X, cam_character_state.pitch);
+            commands.entity(entity).insert(Controlled).insert_bundle(
+                InputManagerBundle::<Action> {
+                    action_state: ActionState::default(),
+                    input_map: InputMap::new([
+                        (KeyCode::A, Action::TurnLeft),
+                        (KeyCode::D, Action::TurnRight),
+                        (KeyCode::W, Action::Walk),
+                    ]),
+                },
+            );
         }
     }
 }
+
+pub struct LeaveLabyrinthEvent;
 
 fn follow_camera(
     mut character: Query<&mut Transform, (With<Controlled>, Without<Camera>)>,
     mut camera: Query<&mut Transform, With<Camera>>,
 ) {
     if let Ok(mut transform) = character.get_single_mut() {
-        *transform = camera.single_mut().clone();
+        transform.translation = camera.single_mut().translation.clone();
     }
 }
 
-// #[derive(Component)]
-// pub struct Direction(Vec3);
-//
-// fn camera_control(
-//     mut character: Query<
-//         (&mut Transform, &ActionState<Action>, &mut Direction),
-//         (With<Controlled>, Without<Camera>),
-//     >,
-//     mut camera: Query<&mut Transform, With<Camera>>,
-//     time: Res<Time>,
-// ) {
-//     if let Ok((mut transform, action_state, mut direction)) = character.get_single_mut() {
-//         let speed = 1.0;
-//         let rotation_speed = 1.0;
-//         if action_state.pressed(Action::Walk) {
-//             println!("{}", direction.0);
-//             transform.translation += direction.0 * speed * time.delta_seconds();
-//         }
-//         if action_state.pressed(Action::TurnLeft) {
-//             let rotate_by = -rotation_speed * time.delta_seconds();
-//             let rotate_to = rotate_to(rotate_by, &direction);
-//             // println!(
-//             //     "current {}, plus {}, rotate to {}",
-//             //     direction.0.x.acos() * if direction.0.z > 0.0 { 1.0 } else { -1.0 },
-//             //     rotate_by,
-//             //     rotate_to
-//             // );
-//             direction.0 = Vec3::new(rotate_to.cos(), 0.0, rotate_to.sin());
-//         }
-//         if action_state.pressed(Action::TurnRight) {
-//             let rotate_by = rotation_speed * time.delta_seconds();
-//             let rotate_to = rotate_to(rotate_by, &direction);
-//             direction.0 = Vec3::new(rotate_to.cos(), 0.0, rotate_to.sin());
-//         }
-//         camera.single_mut().translation = transform.translation;
-//         *camera.single_mut() = camera.single_mut().looking_at(
-//             transform.translation + direction.0 - Vec3::new(0.0, 0.1, 0.0),
-//             Vec3::Y,
-//         );
-//     }
-// }
-//
-// fn rotate_to(rotate_by: f32, direction: &Direction) -> f32 {
-//     let mut rotate_to =
-//         direction.0.x.acos() * if direction.0.z > 0.0 { 1.0 } else { -1.0 } + rotate_by;
-//     if rotate_to < -PI {
-//         rotate_to = 2.0 * PI + rotate_to
-//     } else if rotate_to > PI {
-//         rotate_to = rotate_to - 2.0 * PI
-//     }
-//
-//     rotate_to
-// }
+fn attempt_combine(
+    mut commands: Commands,
+    input: Res<Input<KeyCode>>,
+    characters: Query<(Entity, &Transform, &Character), Without<Controlled>>,
+    mut controlled_character: Query<(&Transform, &mut Character), With<Controlled>>,
+) {
+    if !input.just_pressed(KeyCode::Space) {
+        return;
+    }
+    let (controlled_transform, mut controlled_character) = controlled_character.single_mut();
+    for (entity, transform, character) in &characters {
+        if transform
+            .translation
+            .distance(controlled_transform.translation)
+            < PLAYER_RADIUS * 2.
+        {
+            character
+                .numbers
+                .iter()
+                .for_each(|number| controlled_character.numbers.push(*number));
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
+/// Modified from bevy_flycam (see credits directory for copyright notice and license file)
+#[derive(Default, Component)]
+pub struct CamInputState {
+    reader_motion: ManualEventReader<MouseMotion>,
+    pub pitch: f32,
+    pub yaw: f32,
+}
+
+/// Modified from bevy_flycam (see credits directory for copyright notice and license file)
+/// Mouse sensitivity and movement speed
+pub struct MovementSettings {
+    pub sensitivity: f32,
+    pub speed: f32,
+}
+
+/// Modified from bevy_flycam (see credits directory for copyright notice and license file)
+/// A marker component used in queries when you want flycams and not other cameras
+#[derive(Component)]
+pub struct FlyCam;
+
+/// Modified from bevy_flycam (see credits directory for copyright notice and license file)
+/// Handles keyboard input and movement
+pub fn player_move(
+    keys: Res<Input<KeyCode>>,
+    time: Res<Time>,
+    windows: Res<Windows>,
+    settings: Res<MovementSettings>,
+    maze_assets: Res<MazeAssets>,
+    maze_levels: Res<Assets<LabyrinthLevel>>,
+    mut leave_labyrinth_events: EventWriter<LeaveLabyrinthEvent>,
+    images: Res<Assets<Image>>,
+    mut query: Query<&mut Transform, With<FlyCam>>,
+) {
+    if let Some(window) = windows.get_primary() {
+        if !window.cursor_locked() {
+            return;
+        }
+        let maze_image = images.get(&maze_assets.one_data).unwrap();
+        let pixel_per_row = maze_image.texture_descriptor.size.width as usize;
+        let world_width = pixel_per_row as f32 * PIXEL_WORLD_SIZE;
+        let maze_level = maze_levels.get(&maze_assets.one_level).unwrap();
+        for mut transform in query.iter_mut() {
+            let mut velocity = Vec3::ZERO;
+            let local_z = transform.local_z();
+            let forward = -Vec3::new(local_z.x, 0., local_z.z);
+            let right = Vec3::new(local_z.z, 0., -local_z.x);
+
+            for key in keys.get_pressed() {
+                match key {
+                    KeyCode::W => velocity += forward,
+                    KeyCode::S => velocity -= forward,
+                    KeyCode::A => velocity -= right,
+                    KeyCode::D => velocity += right,
+                    #[cfg(debug_assertions)]
+                    KeyCode::LShift => velocity += Vec3::Y,
+                    #[cfg(debug_assertions)]
+                    KeyCode::LControl => velocity -= Vec3::Y,
+                    _ => (),
+                }
+            }
+
+            velocity = velocity.normalize_or_zero();
+            let mut movement = velocity * time.delta_seconds() * settings.speed;
+
+            #[cfg(debug_assertions)]
+            if transform.translation.y > 0.0 {
+                transform.translation += movement;
+                continue;
+            }
+
+            if movement.z > 0.
+                && ((transform.translation.z + world_width) % PIXEL_WORLD_SIZE)
+                    + PLAYER_RADIUS
+                    + movement.z
+                    > PIXEL_WORLD_SIZE
+            {
+                let slot_y = ((transform.translation.z + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                let slot_x = ((transform.translation.x + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                let next_pixel = (slot_y + 1) * pixel_per_row + slot_x;
+                if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                    if maze_level.exit[0] == slot_x && maze_level.exit[1] == slot_y + 1 {
+                        leave_labyrinth_events.send(LeaveLabyrinthEvent);
+                    }
+                    movement.z = 0.0;
+                }
+            } else if movement.z < 0.
+                && ((transform.translation.z + world_width) % PIXEL_WORLD_SIZE) - PLAYER_RADIUS
+                    + movement.z
+                    < 0.0
+            {
+                let slot_y = ((transform.translation.z + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                let slot_x = ((transform.translation.x + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                let next_pixel = (slot_y - 1) * pixel_per_row + slot_x;
+                if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                    if maze_level.exit[0] == slot_x && maze_level.exit[1] == slot_y - 1 {
+                        leave_labyrinth_events.send(LeaveLabyrinthEvent);
+                    }
+                    movement.z = 0.0;
+                }
+            }
+
+            if movement.x > 0.
+                && ((transform.translation.x + world_width) % PIXEL_WORLD_SIZE)
+                    + PLAYER_RADIUS
+                    + movement.x
+                    > PIXEL_WORLD_SIZE
+            {
+                let slot_y = ((transform.translation.z + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                let slot_x = ((transform.translation.x + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                // corners...
+                if movement.z > 0.
+                    && ((transform.translation.z + world_width) % PIXEL_WORLD_SIZE)
+                        + PLAYER_RADIUS
+                        + movement.z
+                        > PIXEL_WORLD_SIZE
+                {
+                    let next_pixel = (slot_y + 1) * pixel_per_row + slot_x + 1;
+                    if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                        if movement.z.abs() > movement.x.abs() {
+                            movement.z = 0.0;
+                        } else {
+                            movement.x = 0.0;
+                        }
+                    }
+                } else if movement.z < 0.
+                    && ((transform.translation.z + world_width) % PIXEL_WORLD_SIZE) - PLAYER_RADIUS
+                        + movement.z
+                        < 0.0
+                {
+                    let next_pixel = (slot_y - 1) * pixel_per_row + slot_x + 1;
+                    if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                        if movement.z.abs() > movement.x.abs() {
+                            movement.z = 0.0;
+                        } else {
+                            movement.x = 0.0;
+                        }
+                    }
+                }
+                let next_pixel = slot_y * pixel_per_row + slot_x + 1;
+                if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                    if maze_level.exit[0] == slot_x + 1 && maze_level.exit[1] == slot_y {
+                        leave_labyrinth_events.send(LeaveLabyrinthEvent);
+                    }
+                    movement.x = 0.0;
+                }
+            } else if movement.x < 0.
+                && ((transform.translation.x + world_width) % PIXEL_WORLD_SIZE) - PLAYER_RADIUS
+                    + movement.x
+                    < 0.0
+            {
+                let slot_y = ((transform.translation.z + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                let slot_x = ((transform.translation.x + world_width / 2.) / PIXEL_WORLD_SIZE)
+                    .round() as usize;
+                // corners...
+                if movement.z > 0.
+                    && ((transform.translation.z + world_width) % PIXEL_WORLD_SIZE)
+                        + PLAYER_RADIUS
+                        + movement.z
+                        > PIXEL_WORLD_SIZE
+                {
+                    let next_pixel = (slot_y + 1) * pixel_per_row + slot_x - 1;
+                    if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                        if movement.z.abs() > movement.x.abs() {
+                            movement.z = 0.0;
+                        } else {
+                            movement.x = 0.0;
+                        }
+                    }
+                } else if movement.z < 0.
+                    && ((transform.translation.z + world_width) % PIXEL_WORLD_SIZE) - PLAYER_RADIUS
+                        + movement.z
+                        < 0.0
+                {
+                    let next_pixel = (slot_y - 1) * pixel_per_row + slot_x - 1;
+                    if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                        if movement.z.abs() > movement.x.abs() {
+                            movement.z = 0.0;
+                        } else {
+                            movement.x = 0.0;
+                        }
+                    }
+                }
+                let next_pixel = slot_y * pixel_per_row + slot_x - 1;
+                if maze_image.data.get(next_pixel * 4).unwrap() < &50 {
+                    if maze_level.exit[0] == slot_x - 1 && maze_level.exit[1] == slot_y {
+                        leave_labyrinth_events.send(LeaveLabyrinthEvent);
+                    }
+                    movement.x = 0.0;
+                }
+            }
+
+            transform.translation += movement;
+        }
+    } else {
+        warn!("Primary window not found for `player_move`!");
+    }
+}
+
+fn leave_labyrinth(
+    mut events: EventReader<LeaveLabyrinthEvent>,
+    controlled_character: Query<&Character, With<Controlled>>,
+) {
+    if let Some(_event) = events.iter().last() {
+        if controlled_character.single().numbers.len() == 3 {
+            println!("You won!");
+        } else {
+            println!("You need to combine all parts before you can leave");
+        }
+    }
+}
+
+/// Modified from bevy_flycam (see credits directory for copyright notice and license file)
+/// Handles looking around if cursor is locked
+pub fn player_look(
+    settings: Res<MovementSettings>,
+    windows: Res<Windows>,
+    mut state: ResMut<CamInputState>,
+    motion: Res<Events<MouseMotion>>,
+    mut query: Query<&mut Transform, With<FlyCam>>,
+) {
+    if let Some(window) = windows.get_primary() {
+        let mut delta_state = state.as_mut();
+        for mut transform in query.iter_mut() {
+            for ev in delta_state.reader_motion.iter(&motion) {
+                if window.cursor_locked() {
+                    // Using smallest of height or width ensures equal vertical and horizontal sensitivity
+                    let window_scale = window.height().min(window.width());
+                    delta_state.pitch -=
+                        (settings.sensitivity * ev.delta.y * window_scale).to_radians();
+                    delta_state.yaw -=
+                        (settings.sensitivity * ev.delta.x * window_scale).to_radians();
+                }
+
+                delta_state.pitch = delta_state.pitch.clamp(-1.54, 1.54);
+
+                // Order is important to prevent unintended roll
+                transform.rotation = Quat::from_axis_angle(Vec3::Y, delta_state.yaw)
+                    * Quat::from_axis_angle(Vec3::X, delta_state.pitch);
+            }
+        }
+    } else {
+        warn!("Primary window not found for `player_look`!");
+    }
+}
