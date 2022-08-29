@@ -1,11 +1,11 @@
 use crate::actions::Action;
 use crate::loading::{LabyrinthLevel, MazeAssets, TextureAssets};
 use crate::map::{PIXEL_WORLD_SIZE, WALL_HEIGHT};
+use crate::ui::Notification;
 use crate::GameState;
 use bevy::ecs::event::ManualEventReader;
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
-use bevy_mod_picking::PickableBundle;
 use leafwing_input_manager::prelude::*;
 
 pub const PLAYER_Y: f32 = -WALL_HEIGHT + PLAYER_RADIUS;
@@ -72,8 +72,7 @@ fn spawn_characters(
             .insert(Character {
                 numbers: vec![character_number],
             })
-            .insert(CamInputState::default())
-            .insert_bundle(PickableBundle::default());
+            .insert(CamInputState::default());
         if character_number == 1 {
             character.insert(Controlled);
         }
@@ -159,10 +158,11 @@ fn attempt_combine(
     mut commands: Commands,
     input: Res<Input<KeyCode>>,
     characters: Query<(Entity, &Transform, &Character), Without<Controlled>>,
+    mut notification: ResMut<Notification>,
     mut controlled_character: Query<(&Transform, &mut Character), With<Controlled>>,
 ) {
-    if !input.just_pressed(KeyCode::Space) {
-        return;
+    if notification.text == Some("Press space to combine parts".to_string()) {
+        notification.text = None;
     }
     let (controlled_transform, mut controlled_character) = controlled_character.single_mut();
     for (entity, transform, character) in &characters {
@@ -171,6 +171,10 @@ fn attempt_combine(
             .distance(controlled_transform.translation)
             < PLAYER_RADIUS * 2.
         {
+            notification.text = Some("Press space to combine parts".to_string());
+            if !input.just_pressed(KeyCode::Space) {
+                return;
+            }
             character
                 .numbers
                 .iter()
@@ -388,12 +392,17 @@ pub fn player_move(
 fn leave_labyrinth(
     mut events: EventReader<LeaveLabyrinthEvent>,
     controlled_character: Query<&Character, With<Controlled>>,
+    mut notification: ResMut<Notification>,
+    time: Res<Time>,
 ) {
     if let Some(_event) = events.iter().last() {
         if controlled_character.single().numbers.len() == 3 {
-            println!("You won!");
+            notification.text = Some("You won!".to_string());
+            notification.remove_when = None;
         } else {
-            println!("You need to combine all parts before you can leave");
+            notification.text =
+                Some("You need to combine all parts before you can leave".to_string());
+            notification.remove_when = Some(time.seconds_since_startup() + 5.);
         }
     }
 }

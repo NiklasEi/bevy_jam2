@@ -1,8 +1,8 @@
 [package]
-name = "bevy_game" # ToDo
+name = "blubs_dilemma"
 version = "0.1.0"
 publish = false
-authors = ["Niklas Eicker <git@nikl.me>"] # ToDo: you are the author ;)
+authors = ["Niklas Eicker <git@nikl.me>"]
 edition = "2021"
 exclude = ["dist", "build", "assets", "credits"]
 
@@ -43,7 +43,6 @@ bevy-inspector-egui = "0.12.1"
 bevy_mod_picking = "0.8.2"
 bevy_common_assets = {version = "0.3.0", features = ["ron"] }
 leafwing-input-manager = "0.5.2"
-bevy_atmosphere = "0.4.0"
 
 rand = { version = "0.8.3" }
 serde = { version = "1" }

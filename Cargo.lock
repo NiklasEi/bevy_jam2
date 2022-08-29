@@ -330,16 +330,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_atmosphere"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "145e8486d53c5110d359bc2d21d6af9ffc0f87e300cf79a63af4ce2cabac4c8d"
-dependencies = [
- "bevy",
- "radsort",
-]
-
-[[package]]
 name = "bevy_common_assets"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -469,25 +459,6 @@ checksum = "76a767adc36ce1fc917a736843b026d4de7069d90ed5e669c852481ef69fd5aa"
 dependencies = [
  "bevy_macro_utils",
  "encase_derive_impl",
-]
-
-[[package]]
-name = "bevy_game"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy-inspector-egui",
- "bevy_asset_loader",
- "bevy_atmosphere",
- "bevy_common_assets",
- "bevy_kira_audio",
- "bevy_mod_picking",
- "embed-resource",
- "image 0.24.3",
- "leafwing-input-manager",
- "rand",
- "serde",
- "winit",
 ]
 
 [[package]]
@@ -1019,6 +990,24 @@ name = "block"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
+
+[[package]]
+name = "blubs_dilemma"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy-inspector-egui",
+ "bevy_asset_loader",
+ "bevy_common_assets",
+ "bevy_kira_audio",
+ "bevy_mod_picking",
+ "embed-resource",
+ "image 0.24.3",
+ "leafwing-input-manager",
+ "rand",
+ "serde",
+ "winit",
+]
 
 [[package]]
 name = "bumpalo"

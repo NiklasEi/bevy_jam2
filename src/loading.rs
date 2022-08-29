@@ -47,6 +47,18 @@ pub struct TextureAssets {
     pub green: ColorStandardMaterial<80, 125, 80, { u8::MAX }>,
     pub red: ColorStandardMaterial<{ u8::MAX }, 0, 0, { u8::MAX }>,
     pub blue: ColorStandardMaterial<0, 0, { u8::MAX }, { u8::MAX }>,
+    #[asset(path = "textures/green_marker_mask.png", standard_material)]
+    pub green_marker_mask: Handle<StandardMaterial>,
+    #[asset(path = "textures/green_marker.png", standard_material)]
+    pub green_marker: Handle<StandardMaterial>,
+    #[asset(path = "textures/red_marker_mask.png", standard_material)]
+    pub red_marker_mask: Handle<StandardMaterial>,
+    #[asset(path = "textures/red_marker.png", standard_material)]
+    pub red_marker: Handle<StandardMaterial>,
+    #[asset(path = "textures/blue_marker_mask.png", standard_material)]
+    pub blue_marker_mask: Handle<StandardMaterial>,
+    #[asset(path = "textures/blue_marker.png", standard_material)]
+    pub blue_marker: Handle<StandardMaterial>,
 }
 
 impl TextureAssets {
