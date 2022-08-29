@@ -1,11 +1,13 @@
 use crate::actions::Action;
 use crate::loading::{LabyrinthLevel, MazeAssets, TextureAssets};
-use crate::map::{PIXEL_WORLD_SIZE, WALL_HEIGHT};
+use crate::map::{MyRaycastSet, PlaneAsset, PIXEL_WORLD_SIZE, WALL_HEIGHT};
 use crate::ui::Notification;
 use crate::GameState;
 use bevy::ecs::event::ManualEventReader;
 use bevy::input::mouse::MouseMotion;
+use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
+use bevy_mod_raycast::{DebugCursor, DebugCursorTail, RaycastSystem};
 use leafwing_input_manager::prelude::*;
 
 pub const PLAYER_Y: f32 = -WALL_HEIGHT + PLAYER_RADIUS;
@@ -34,6 +36,7 @@ impl Plugin for CharacterPlugin {
                 .with_system(leave_labyrinth.after(player_move))
                 .with_system(attempt_combine)
                 .with_system(follow_camera)
+                .with_system(draw_markers.after(RaycastSystem::UpdateDebugCursor::<MyRaycastSet>))
                 .with_system(switch_character_control.after(follow_camera)),
         );
     }
@@ -42,6 +45,23 @@ impl Plugin for CharacterPlugin {
 #[derive(Component)]
 pub struct Character {
     numbers: Vec<u8>,
+    pub color: CharacterColor,
+}
+
+pub enum CharacterColor {
+    Green,
+    Blue,
+    Red,
+}
+
+impl CharacterColor {
+    fn from_number(number: u8) -> CharacterColor {
+        match number {
+            1 => CharacterColor::Green,
+            2 => CharacterColor::Blue,
+            _ => CharacterColor::Red,
+        }
+    }
 }
 
 fn spawn_characters(
@@ -71,6 +91,7 @@ fn spawn_characters(
         character
             .insert(Character {
                 numbers: vec![character_number],
+                color: CharacterColor::from_number(character_number),
             })
             .insert(CamInputState::default());
         if character_number == 1 {
@@ -78,6 +99,82 @@ fn spawn_characters(
         }
     }
 }
+
+#[derive(Component)]
+pub struct MarkerMask;
+
+fn draw_markers(
+    input: Res<Input<MouseButton>>,
+    mut commands: Commands,
+    mut cursor: Query<
+        (
+            Entity,
+            &mut Handle<Mesh>,
+            &mut Handle<StandardMaterial>,
+            &mut Transform,
+        ),
+        (With<DebugCursor<MyRaycastSet>>, Without<Controlled>),
+    >,
+    textures: Res<TextureAssets>,
+    current_character: Query<(&Character, &Transform), With<Controlled>>,
+    plane: Res<PlaneAsset>,
+    tail: Query<Entity, With<DebugCursorTail<MyRaycastSet>>>,
+) {
+    let (character, char_transform) = current_character.single();
+    if let Ok((entity, mut mesh, mut material, mut transform)) = cursor.get_single_mut() {
+        if transform.translation.distance(char_transform.translation) < 1. {
+            let up = transform.up();
+            transform.translation += up.normalize() * 0.005; // 0.005
+            *mesh = plane.0.clone();
+            *material = match character.color {
+                CharacterColor::Green => textures.green_marker_mask.clone(),
+                CharacterColor::Blue => textures.blue_marker_mask.clone(),
+                CharacterColor::Red => textures.red_marker_mask.clone(),
+            };
+            commands.entity(entity).insert(NotShadowCaster);
+            if input.just_pressed(MouseButton::Left) {
+                commands
+                    .spawn_bundle(PbrBundle {
+                        mesh: plane.0.clone(),
+                        transform: transform.clone(),
+                        material: match character.color {
+                            CharacterColor::Green => textures.green_marker.clone(),
+                            CharacterColor::Blue => textures.blue_marker.clone(),
+                            CharacterColor::Red => textures.red_marker.clone(),
+                        },
+                        ..default()
+                    })
+                    .insert(NotShadowCaster);
+            }
+            if let Ok(tail) = tail.get_single() {
+                commands.entity(tail).despawn();
+            }
+        } else {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
+// fn draw_markers(mut commands: Commands, query: Query<(&Transform, &Intersection<MyRaycastSet>)>, old_marker_masks: Query<Entity, With<MarkerMask>>, textures: Res<TextureAssets>, current_character: Query<(&Character, &Transform), With<Controlled>>) {
+// let (character, char_transform) = current_character.single();
+// println!("draw_markers");
+// for (transform, intersection) in &query {
+//     println!("intersect");
+//     if let Some(position) = intersection.position() {
+//         if position.distance(char_transform.translation) < 100. {
+//             println!("draw at {:?}", position);
+//             let mut mask_transform = transform.clone();
+//             mask_transform = mask_transform.with_translation(position.clone());
+//             commands.spawn_bundle(PbrBundle {
+//                 material: textures.green_marker_mask.clone(),
+//                 transform: mask_transform,
+//                 ..default()
+//             }).insert(MarkerMask);
+//         }
+//     }
+// }
+// old_marker_masks.iter().for_each(|entity| commands.entity(entity).despawn());
+// }
 
 fn initial_grab_cursor(mut windows: ResMut<Windows>) {
     if let Some(window) = windows.get_primary_mut() {

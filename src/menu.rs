@@ -1,9 +1,9 @@
 use crate::character::{FlyCam, PLAYER_Y};
 use crate::loading::FontAssets;
-use crate::map::PIXEL_WORLD_SIZE;
+use crate::map::{MyRaycastSet, PIXEL_WORLD_SIZE};
 use crate::GameState;
 use bevy::prelude::*;
-use bevy_mod_picking::PickingCameraBundle;
+use bevy_mod_raycast::{RayCastMethod, RayCastSource};
 
 pub struct MenuPlugin;
 
@@ -40,6 +40,8 @@ fn setup_menu(
     font_assets: Res<FontAssets>,
     button_colors: Res<ButtonColors>,
 ) {
+    let mut source = RayCastSource::<MyRaycastSet>::new();
+    source.cast_method = RayCastMethod::Screenspace(Vec2::new(400., 300.));
     commands
         .spawn_bundle(Camera3dBundle {
             transform: Transform::from_translation(Vec3::new(
@@ -49,7 +51,7 @@ fn setup_menu(
             )),
             ..default()
         })
-        .insert_bundle(PickingCameraBundle::default())
+        .insert(source)
         .insert(FlyCam);
     commands
         .spawn_bundle(ButtonBundle {

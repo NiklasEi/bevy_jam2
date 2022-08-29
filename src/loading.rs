@@ -21,6 +21,7 @@ impl Plugin for LoadingPlugin {
                 .init_resource::<LabyrinthMaterials>()
                 .continue_to_state(GameState::Menu),
         )
+        .add_system_set(SystemSet::on_exit(GameState::Loading).with_system(make_markers_opaque))
         .add_plugin(RonAssetPlugin::<LabyrinthLevel>::new(&["ron.level"]));
     }
 }
@@ -59,6 +60,30 @@ pub struct TextureAssets {
     pub blue_marker_mask: Handle<StandardMaterial>,
     #[asset(path = "textures/blue_marker.png", standard_material)]
     pub blue_marker: Handle<StandardMaterial>,
+}
+
+fn make_markers_opaque(
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    textures: Res<TextureAssets>,
+) {
+    materials
+        .get_mut(&textures.green_marker_mask)
+        .unwrap()
+        .alpha_mode = AlphaMode::Opaque;
+    materials
+        .get_mut(&textures.green_marker)
+        .unwrap()
+        .alpha_mode = AlphaMode::Opaque;
+    materials
+        .get_mut(&textures.red_marker_mask)
+        .unwrap()
+        .alpha_mode = AlphaMode::Opaque;
+    materials.get_mut(&textures.red_marker).unwrap().alpha_mode = AlphaMode::Opaque;
+    materials
+        .get_mut(&textures.blue_marker_mask)
+        .unwrap()
+        .alpha_mode = AlphaMode::Opaque;
+    materials.get_mut(&textures.blue_marker).unwrap().alpha_mode = AlphaMode::Opaque;
 }
 
 impl TextureAssets {

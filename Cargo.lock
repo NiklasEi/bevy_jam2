@@ -624,16 +624,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_mod_picking"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19f97d740fcd9d089a768399e902e741f45f8d671e756c939d2f1ce8ad14d63a"
-dependencies = [
- "bevy",
- "bevy_mod_raycast",
-]
-
-[[package]]
 name = "bevy_mod_raycast"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1000,7 +990,7 @@ dependencies = [
  "bevy_asset_loader",
  "bevy_common_assets",
  "bevy_kira_audio",
- "bevy_mod_picking",
+ "bevy_mod_raycast",
  "embed-resource",
  "image 0.24.3",
  "leafwing-input-manager",

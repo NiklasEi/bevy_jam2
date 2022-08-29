@@ -2,6 +2,7 @@ use crate::loading::{LabyrinthLevel, LabyrinthMaterials, MazeAssets, TextureAsse
 use crate::shape::Plane;
 use crate::GameState;
 use bevy::prelude::*;
+use bevy_mod_raycast::{DefaultPluginState, DefaultRaycastingPlugin, RayCastMesh};
 
 pub const PIXEL_WORLD_SIZE: f32 = 0.7;
 pub const WALL_HEIGHT: f32 = 0.3;
@@ -14,9 +15,15 @@ impl Plugin for MapPlugin {
             color: Color::WHITE,
             brightness: 0.1,
         })
+        .insert_resource(DefaultPluginState::<MyRaycastSet>::default().with_debug_cursor())
+        .add_plugin(DefaultRaycastingPlugin::<MyRaycastSet>::default())
         .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(spawn_map));
     }
 }
+
+pub struct MyRaycastSet;
+
+pub struct PlaneAsset(pub Handle<Mesh>);
 
 fn spawn_map(
     mut commands: Commands,
@@ -28,11 +35,14 @@ fn spawn_map(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let plane = meshes.add(Plane::default().into());
+    let mask = meshes.add(Plane { size: 0.1 }.into());
+    commands.insert_resource(PlaneAsset(mask));
     let maze_image = images.get(&maze_assets.one_data).unwrap();
     let pixel_per_row = maze_image.texture_descriptor.size.width as usize;
     let world_width = pixel_per_row as f32 * PIXEL_WORLD_SIZE;
     let data = &maze_image.data;
     let maze_level = maze_levels.get(&maze_assets.one_level).unwrap();
+    let mut elements = vec![];
     for pixel_x in 0..pixel_per_row {
         for pixel_y in 0..pixel_per_row {
             let pixel = pixel_y * pixel_per_row + pixel_x;
@@ -43,12 +53,7 @@ fn spawn_map(
                     pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
                 ));
                 transform = transform.with_scale(Vec3::splat(PIXEL_WORLD_SIZE));
-                commands.spawn_bundle(PbrBundle {
-                    mesh: plane.clone(),
-                    material: labyrinth_materials.ground.clone(),
-                    transform,
-                    ..default()
-                });
+                elements.push((labyrinth_materials.ground.clone(), transform));
                 // +x
                 if pixel_x < pixel_per_row - 1 && data.get((pixel + 1) * 4).unwrap() < &50 {
                     let mut transform = Transform::from_translation(Vec3::new(
@@ -67,12 +72,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                     }
-                    commands.spawn_bundle(PbrBundle {
-                        mesh: plane.clone(),
-                        material: labyrinth_materials.wall.clone(),
-                        transform,
-                        ..default()
-                    });
+                    elements.push((labyrinth_materials.wall.clone(), transform));
                 }
                 // -x
                 if pixel_x > 0 && data.get((pixel - 1) * 4).unwrap() < &50 {
@@ -93,12 +93,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                     }
-                    commands.spawn_bundle(PbrBundle {
-                        mesh: plane.clone(),
-                        material: labyrinth_materials.wall.clone(),
-                        transform,
-                        ..default()
-                    });
+                    elements.push((labyrinth_materials.wall.clone(), transform));
                 }
                 // +y
                 if pixel_y < pixel_per_row - 1
@@ -120,12 +115,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                     }
-                    commands.spawn_bundle(PbrBundle {
-                        mesh: plane.clone(),
-                        material: labyrinth_materials.wall.clone(),
-                        transform,
-                        ..default()
-                    });
+                    elements.push((labyrinth_materials.wall.clone(), transform));
                 }
                 // -y
                 if pixel_y > 0 && data.get((pixel - pixel_per_row) * 4).unwrap() < &50 {
@@ -146,12 +136,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                     }
-                    commands.spawn_bundle(PbrBundle {
-                        mesh: plane.clone(),
-                        material: labyrinth_materials.wall.clone(),
-                        transform,
-                        ..default()
-                    });
+                    elements.push((labyrinth_materials.wall.clone(), transform));
                 }
             } else {
                 if maze_level.exit[0] == pixel_x && maze_level.exit[1] == pixel_y {
@@ -161,12 +146,7 @@ fn spawn_map(
                         pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
                     ));
                     transform = transform.with_scale(Vec3::splat(PIXEL_WORLD_SIZE));
-                    commands.spawn_bundle(PbrBundle {
-                        mesh: plane.clone(),
-                        material: textures.grass.clone().into(),
-                        transform,
-                        ..default()
-                    });
+                    elements.push((textures.grass.clone(), transform));
                     // +x
                     if pixel_x < pixel_per_row - 1 && data.get((pixel + 1) * 4).unwrap() < &50 {
                         let mut transform = Transform::from_translation(Vec3::new(
@@ -181,12 +161,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                         transform = transform.looking_at(transform.translation - Vec3::Y, -Vec3::X);
-                        commands.spawn_bundle(PbrBundle {
-                            mesh: plane.clone(),
-                            material: labyrinth_materials.wall.clone(),
-                            transform,
-                            ..default()
-                        });
+                        elements.push((labyrinth_materials.wall.clone(), transform));
                     }
                     // -x
                     if pixel_x > 0 && data.get((pixel - 1) * 4).unwrap() < &50 {
@@ -203,12 +178,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                         transform = transform.looking_at(transform.translation + Vec3::Y, Vec3::X);
-                        commands.spawn_bundle(PbrBundle {
-                            mesh: plane.clone(),
-                            material: labyrinth_materials.wall.clone(),
-                            transform,
-                            ..default()
-                        });
+                        elements.push((labyrinth_materials.wall.clone(), transform));
                     }
                     // +y
                     if pixel_y < pixel_per_row - 1
@@ -226,12 +196,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                         transform = transform.looking_at(transform.translation - Vec3::Y, -Vec3::Z);
-                        commands.spawn_bundle(PbrBundle {
-                            mesh: plane.clone(),
-                            material: labyrinth_materials.wall.clone(),
-                            transform,
-                            ..default()
-                        });
+                        elements.push((labyrinth_materials.wall.clone(), transform));
                     }
                     // -y
                     if pixel_y > 0 && data.get((pixel - pixel_per_row) * 4).unwrap() < &50 {
@@ -248,12 +213,7 @@ fn spawn_map(
                             WALL_HEIGHT / 2.,
                         ));
                         transform = transform.looking_at(transform.translation + Vec3::Y, Vec3::Z);
-                        commands.spawn_bundle(PbrBundle {
-                            mesh: plane.clone(),
-                            material: labyrinth_materials.wall.clone(),
-                            transform,
-                            ..default()
-                        });
+                        elements.push((labyrinth_materials.wall.clone(), transform));
                     }
                 } else {
                     let mut transform = Transform::from_translation(Vec3::new(
@@ -262,15 +222,20 @@ fn spawn_map(
                         pixel_y as f32 * PIXEL_WORLD_SIZE - world_width / 2.,
                     ));
                     transform = transform.with_scale(Vec3::splat(PIXEL_WORLD_SIZE));
-                    commands.spawn_bundle(PbrBundle {
-                        mesh: plane.clone(),
-                        material: textures.grass.clone().into(),
-                        transform,
-                        ..default()
-                    });
+                    elements.push((textures.grass.clone(), transform));
                 }
             }
         }
+    }
+    for (material, transform) in elements.drain(..) {
+        commands
+            .spawn_bundle(PbrBundle {
+                mesh: plane.clone(),
+                material,
+                transform,
+                ..default()
+            })
+            .insert(RayCastMesh::<MyRaycastSet>::default());
     }
 
     commands.spawn_bundle(PointLightBundle {
